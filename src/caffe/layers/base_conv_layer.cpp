@@ -226,6 +226,17 @@ void BaseConvolutionLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
       conv_input_shape_data[i] = bottom[0]->shape(channel_axis_ + i);
     }
   }
+  vector<int> top_dim_blob_shape(1, num_spatial_axes_ + 1);
+  conv_output_shape_.Reshape(top_dim_blob_shape);
+  int* conv_output_shape_data = conv_output_shape_.mutable_cpu_data();
+  for (int i = 0; i < num_spatial_axes_ + 1; ++i) {
+    if (reverse_dimensions()) {
+    	conv_output_shape_data[i] = bottom[0]->shape(channel_axis_ + i);
+    } else {
+    	conv_output_shape_data[i] = top[0]->shape(channel_axis_ + i);
+    }
+  }
+
   // The im2col result buffer will only hold one image at a time to avoid
   // overly large memory usage. In the special case of 1x1 convolution
   // it goes lazily unused to save memory.
@@ -239,11 +250,13 @@ void BaseConvolutionLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     }
   }
   col_buffer_.Reshape(col_buffer_shape_);
+
   bottom_dim_ = bottom[0]->count(channel_axis_);
   top_dim_ = top[0]->count(channel_axis_);
   num_kernels_im2col_ = conv_in_channels_ * conv_out_spatial_dim_;
   num_kernels_col2im_ = reverse_dimensions() ? top_dim_ : bottom_dim_;
   // Set up the all ones "bias multiplier" for adding biases by BLAS
+  in_spatial_dim_ = bottom[0]->count(first_spatial_axis);
   out_spatial_dim_ = top[0]->count(first_spatial_axis);
   if (bias_term_) {
     vector<int> bias_multiplier_shape(1, out_spatial_dim_);
@@ -365,7 +378,6 @@ void BaseConvolutionLayer<Dtype>::backward_gpu_gemm(const Dtype* output,
     conv_col2im_gpu(col_buff, input);
   }
 }
-
 template <typename Dtype>
 void BaseConvolutionLayer<Dtype>::weight_gpu_gemm(const Dtype* input,
     const Dtype* output, Dtype* weights) {
@@ -387,6 +399,23 @@ void BaseConvolutionLayer<Dtype>::backward_gpu_bias(Dtype* bias,
     const Dtype* input) {
   caffe_gpu_gemv<Dtype>(CblasNoTrans, num_output_, out_spatial_dim_, 1.,
       input, bias_multiplier_.gpu_data(), 1., bias);
+}
+
+
+template <typename Dtype>
+void BaseConvolutionLayer<Dtype>::position_gpu_gemm(const Dtype* input,
+    const Dtype* output, Dtype* position_diff, const Dtype* xpos, const Dtype* ypos) {
+  const Dtype* col_buff = pos_col_buffer_.gpu_data();
+  
+  int kernel_n = this->blobs_[0]->count(2);
+
+  for (int pg = 0; pg < pos_group_; ++pg) {
+	conv_im2posdiff_gpu(input, xpos+ pg*kernel_n, ypos+ pg*kernel_n, pos_col_buffer_.mutable_gpu_data());
+    caffe_gpu_gemm<Dtype>(CblasNoTrans, CblasTrans, conv_out_channels_ / pos_group_,
+        2*kernel_dim_, conv_out_spatial_dim_ * num_,
+        (Dtype)1., output + num_ * output_offset_/pos_group_ * pg, col_buff,
+        (Dtype)0., position_diff + 2*weight_offset_/pos_group_ * pg);
+  }
 }
 
 #endif  // !CPU_ONLY

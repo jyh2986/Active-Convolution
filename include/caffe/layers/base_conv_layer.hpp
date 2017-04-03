@@ -50,6 +50,7 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   void weight_gpu_gemm(const Dtype* col_input, const Dtype* output, Dtype*
       weights);
   void backward_gpu_bias(Dtype* bias, const Dtype* input);
+  void position_gpu_gemm(const Dtype* col_input, const Dtype* output, Dtype*position_diff, const Dtype* xpos, const Dtype* ypos);
 #endif
 
   /// @brief The spatial dimensions of the input.
@@ -72,6 +73,8 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   Blob<int> dilation_;
   /// @brief The spatial dimensions of the convolution input.
   Blob<int> conv_input_shape_;
+  /// @brief The spatial dimensions of the convolution output.
+  Blob<int> conv_output_shape_;
   /// @brief The spatial dimensions of the col_buffer.
   vector<int> col_buffer_shape_;
   /// @brief The spatial dimensions of the output.
@@ -86,12 +89,18 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   int num_;
   int channels_;
   int group_;
+  int in_spatial_dim_;
   int out_spatial_dim_;
   int weight_offset_;
   int num_output_;
   bool bias_term_;
   bool is_1x1_;
   bool force_nd_im2col_;
+
+  int pos_group_;
+
+  //For ACU
+  Blob<Dtype> pos_col_buffer_;
 
  private:
   // wrap im2col/col2im so we don't have to remember the (long) argument lists
@@ -139,6 +148,44 @@ class BaseConvolutionLayer : public Layer<Dtype> {
           stride_.gpu_data(), dilation_.gpu_data(), col_buff);
     }
   }
+  /*inline void conv_im2col_intp_gpu(const Dtype* data, const Dtype* xpos, const Dtype* ypos, const Dtype* pos_mask, Dtype* col_buff, bool reverse = false) {
+    if (!force_nd_im2col_ && num_spatial_axes_ == 2) {
+
+      if(reverse)
+      {
+    	  im2col_intp_gpu(data, xpos, ypos, pos_mask, conv_out_channels_/pos_group_,
+    			conv_input_shape_.cpu_data()[1], conv_input_shape_.cpu_data()[2], conv_output_shape_.cpu_data()[1], conv_output_shape_.cpu_data()[2],
+				kernel_shape_.cpu_data()[0], kernel_shape_.cpu_data()[1],
+				-pad_.cpu_data()[0], -pad_.cpu_data()[1],
+				stride_.cpu_data()[0], stride_.cpu_data()[1],
+				dilation_.cpu_data()[0], dilation_.cpu_data()[1], col_buff, reverse);
+      }
+      else
+      {
+    	  im2col_intp_gpu(data, xpos, ypos, pos_mask, conv_in_channels_,
+    			conv_input_shape_.cpu_data()[1], conv_input_shape_.cpu_data()[2], conv_output_shape_.cpu_data()[1], conv_output_shape_.cpu_data()[2],
+          kernel_shape_.cpu_data()[0], kernel_shape_.cpu_data()[1],
+          pad_.cpu_data()[0], pad_.cpu_data()[1],
+          stride_.cpu_data()[0], stride_.cpu_data()[1],
+          dilation_.cpu_data()[0], dilation_.cpu_data()[1], col_buff, reverse);
+      }
+    } else {
+      NOT_IMPLEMENTED;
+    }
+  }*/
+  inline void conv_im2posdiff_gpu(const Dtype* data, const Dtype* xpos, const Dtype* ypos, Dtype* col_buff) {
+    if (!force_nd_im2col_ && num_spatial_axes_ == 2) {
+      im2posdiff_gpu(data, xpos, ypos, num_, conv_in_channels_,
+          conv_input_shape_.cpu_data()[1], conv_input_shape_.cpu_data()[2],
+          kernel_shape_.cpu_data()[0], kernel_shape_.cpu_data()[1],
+          pad_.cpu_data()[0], pad_.cpu_data()[1],
+          stride_.cpu_data()[0], stride_.cpu_data()[1],
+          dilation_.cpu_data()[0], dilation_.cpu_data()[1], col_buff);
+    } else {
+      NOT_IMPLEMENTED;
+    }
+  }
+
   inline void conv_col2im_gpu(const Dtype* col_buff, Dtype* data) {
     if (!force_nd_im2col_ && num_spatial_axes_ == 2) {
       col2im_gpu(col_buff, conv_in_channels_,
@@ -154,6 +201,19 @@ class BaseConvolutionLayer : public Layer<Dtype> {
           dilation_.gpu_data(), data);
     }
   }
+
+  /*inline void conv_col2im_intp_gpu(const Dtype* col_buff, const Dtype* xpos, const Dtype* ypos, Dtype* data) {
+    if (!force_nd_im2col_ && num_spatial_axes_ == 2) {
+      col2im_intp_gpu(col_buff, xpos, ypos, conv_in_channels_,
+          conv_input_shape_.cpu_data()[1], conv_input_shape_.cpu_data()[2],
+          kernel_shape_.cpu_data()[0], kernel_shape_.cpu_data()[1],
+          pad_.cpu_data()[0], pad_.cpu_data()[1],
+          stride_.cpu_data()[0], stride_.cpu_data()[1],
+          dilation_.cpu_data()[0], dilation_.cpu_data()[1], data);
+    } else {
+      NOT_IMPLEMENTED;
+    }
+  }*/
 #endif
 
   int num_kernels_im2col_;

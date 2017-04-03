@@ -306,7 +306,7 @@ message ParamSpec {
 // NOTE
 // Update the next available ID when you add a new LayerParameter field.
 //
-// LayerParameter next available layer-specific ID: 147 (last added: recurrent_param)
+// LayerParameter next available layer-specific ID: 148 (last added: aconv_param)
 message LayerParameter {
   optional string name = 1; // the layer name
   optional string type = 2; // the layer type
@@ -359,6 +359,7 @@ message LayerParameter {
   // engine parameter for selecting the implementation.
   // The default for the engine is set by the ENGINE switch at compile-time.
   optional AccuracyParameter accuracy_param = 102;
+  optional AConvParameter aconv_param = 147;
   optional ArgMaxParameter argmax_param = 103;
   optional BatchNormParameter batch_norm_param = 139;
   optional BiasParameter bias_param = 141;
@@ -473,6 +474,28 @@ message AccuracyParameter {
 
   // If specified, ignore instances with the given label.
   optional int32 ignore_label = 3;
+}
+
+message AConvParameter {
+  optional int32 pad = 1 [default = 0];
+  optional int32 pad_h = 2 [default = 0];
+  optional int32 pad_w = 3 [default = 0];
+  
+  optional float base_radius = 9 [default = 1];
+  optional float base_angle = 22 [default = 0];
+  
+  optional float pos_filler_std = 10 [default = 0.05];
+
+  optional bool normalize = 25 [default = false];
+  
+  enum FilterType {
+    SQUARE = 0;
+    CIRCLE = 1;
+    RANDOM = 2;
+  }  
+  optional FilterType type = 4 [default = SQUARE];
+
+  optional uint32 position_group = 11 [default = 1]; // The position group size for active conv
 }
 
 message ArgMaxParameter {

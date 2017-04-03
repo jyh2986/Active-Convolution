@@ -39,6 +39,82 @@ __global__ void im2col_gpu_kernel(const int n, const Dtype* data_im,
 }
 
 template <typename Dtype>
+__global__ void im2posdiff_gpu_kernel(const int n, const Dtype* data_im, const Dtype* xpos, const Dtype* ypos,
+    const int posdiff_dim, const int data_dim, const int nums, const int height, const int width, const int kernel_h, const int kernel_w,
+    const int pad_h, const int pad_w,
+    const int stride_h, const int stride_w,
+    const int dilation_h, const int dilation_w,
+    const int height_col, const int width_col,
+    Dtype* data_col) {
+  CUDA_KERNEL_LOOP(index, n) {
+	const int num = index / posdiff_dim;
+	const int idx = index % posdiff_dim;
+    const int h_index = idx / width_col;
+    const int h_col = h_index % height_col;
+    const int w_col = idx % width_col;
+    const int c_im = h_index / height_col;
+    const int c_col = c_im * kernel_h * kernel_w;
+    const int h_offset = h_col * stride_h - pad_h;
+    const int w_offset = w_col * stride_w - pad_w;
+    Dtype* data_col_ptr = data_col + num * (width_col * height_col);
+    data_col_ptr += (nums * c_col * height_col + h_col) * width_col + w_col;  //column vector pointer
+    const Dtype* data_im_ptr = data_im + num * data_dim;
+    data_im_ptr += (c_im * height + h_offset) * width + w_offset;  //image pointer
+
+    for (int f = 0; f < kernel_h * kernel_w; ++f) {
+		{
+			Dtype x = xpos[f];
+			Dtype y = ypos[f];
+
+			int x1 = floor((double)x);
+			int x2 = x1+1;
+			int y1 = floor((double)y);
+			int y2 = y1+1;
+
+			int i,j;
+			int h_im, w_im;
+
+			j = (x1==x)?x1-1:x1;
+			i = (y1==y)?y1-1:y1;
+			h_im = h_offset + i * dilation_h;
+			w_im = w_offset + j * dilation_w;
+			Dtype q11 = (h_im >= 0 && w_im >= 0 && h_im < height && w_im < width) ?
+						data_im_ptr[i * dilation_h * width + j * dilation_w] : 0;
+
+			j = x2;
+			i = (y1==y)?y1-1:y1;
+			h_im = h_offset + i * dilation_h;
+			w_im = w_offset + j * dilation_w;
+			Dtype q21 = (h_im >= 0 && w_im >= 0 && h_im < height && w_im < width) ?
+						data_im_ptr[i * dilation_h * width + j * dilation_w] : 0;
+
+			j = (x1==x)?x1-1:x1;
+			i = y2;
+			h_im = h_offset + i * dilation_h;
+			w_im = w_offset + j * dilation_w;
+			Dtype q12 = (h_im >= 0 && w_im >= 0 && h_im < height && w_im < width) ?
+						data_im_ptr[i * dilation_h * width + j * dilation_w] : 0;
+
+			j = x2;
+			i = y2;
+			h_im = h_offset + i * dilation_h;
+			w_im = w_offset + j * dilation_w;
+			Dtype q22 = (h_im >= 0 && w_im >= 0 && h_im < height && w_im < width) ?
+						data_im_ptr[i * dilation_h * width + j * dilation_w] : 0;
+
+
+			Dtype val_x = (y2-y)*(q21-q11)+(y-y1)*(q22-q12);
+			Dtype val_y = (x2-x)*(q12-q11)+(x-x1)*(q22-q21);
+
+			*data_col_ptr = val_x;
+			data_col_ptr[n*kernel_h*kernel_w] = val_y;
+		}
+        data_col_ptr += nums * height_col * width_col;
+    }
+  }
+}
+
+template <typename Dtype>
 void im2col_gpu(const Dtype* data_im, const int channels,
     const int height, const int width, const int kernel_h, const int kernel_w,
     const int pad_h, const int pad_w,
@@ -61,12 +137,51 @@ void im2col_gpu(const Dtype* data_im, const int channels,
   CUDA_POST_KERNEL_CHECK;
 }
 
+
+template <typename Dtype>
+void im2posdiff_gpu(const Dtype* data_im, const Dtype* xpos, const Dtype* ypos,
+	const int nums, const int channels,
+    const int height, const int width, const int kernel_h, const int kernel_w,
+    const int pad_h, const int pad_w,
+    const int stride_h, const int stride_w,
+    const int dilation_h, const int dilation_w,
+    Dtype* data_col) {
+  // We are going to launch channels * height_col * width_col kernels, each
+  // kernel responsible for copying a single-channel grid.
+  int height_col = (height + 2 * pad_h -1) / stride_h + 1;
+  int width_col = (width + 2 * pad_w - 1) / stride_w + 1;
+  int posdiff_dim = channels * height_col * width_col;
+  int data_dim = channels * height * width;
+  int num_kernels = nums * posdiff_dim;
+  // NOLINT_NEXT_LINE(whitespace/operators)
+  im2posdiff_gpu_kernel<Dtype><<<CAFFE_GET_BLOCKS(num_kernels),
+                             CAFFE_CUDA_NUM_THREADS>>>(
+      num_kernels, data_im, xpos, ypos,
+      posdiff_dim, data_dim, nums, height, width, kernel_h, kernel_w, pad_h,
+      pad_w, stride_h, stride_w, dilation_h, dilation_w, height_col,
+      width_col, data_col);
+  CUDA_POST_KERNEL_CHECK;
+}
+
+
 // Explicit instantiation
 template void im2col_gpu<float>(const float* data_im, const int channels,
     const int height, const int width, const int kernel_h, const int kernel_w,
     const int pad_h, const int pad_w, const int stride_h, const int stride_w,
     const int dilation_h, const int dilation_w, float* data_col);
 template void im2col_gpu<double>(const double* data_im, const int channels,
+    const int height, const int width, const int kernel_h, const int kernel_w,
+    const int pad_h, const int pad_w, const int stride_h, const int stride_w,
+    const int dilation_h, const int dilation_w, double* data_col);
+
+
+template void im2posdiff_gpu<float>(const float* data_im, const float* xpos, const float* ypos,
+	const int nums, const int channels,
+    const int height, const int width, const int kernel_h, const int kernel_w,
+    const int pad_h, const int pad_w, const int stride_h, const int stride_w,
+    const int dilation_h, const int dilation_w, float* data_col);
+template void im2posdiff_gpu<double>(const double* data_im, const double* xpos, const double* ypos,
+	const int nums, const int channels,
     const int height, const int width, const int kernel_h, const int kernel_w,
     const int pad_h, const int pad_w, const int stride_h, const int stride_w,
     const int dilation_h, const int dilation_w, double* data_col);

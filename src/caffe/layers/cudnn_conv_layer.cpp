@@ -232,6 +232,12 @@ void CuDNNConvolutionLayer<Dtype>::Reshape(
 }
 
 template <typename Dtype>
+void CuDNNConvolutionLayer<Dtype>::setDeterministic(int idx) {
+  bwd_filter_algo_[idx] = CUDNN_CONVOLUTION_BWD_FILTER_ALGO_1;
+  bwd_data_algo_[idx] = CUDNN_CONVOLUTION_BWD_DATA_ALGO_1;
+}
+
+template <typename Dtype>
 CuDNNConvolutionLayer<Dtype>::~CuDNNConvolutionLayer() {
   // Check that handles have been setup before destroying.
   if (!handles_setup_) { return; }
