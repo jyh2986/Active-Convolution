@@ -1,37 +1,75 @@
-# Caffe
+# Active Convolution
 
-[![Build Status](https://travis-ci.org/BVLC/caffe.svg?branch=master)](https://travis-ci.org/BVLC/caffe)
-[![License](https://img.shields.io/badge/license-BSD-blue.svg)](LICENSE)
+This repository contains the implementation for the paper [Active Convolution: Learning the Shape of Convolution for Image Classification](http://arxiv.org/abs/1703.09076). 
 
-Caffe is a deep learning framework made with expression, speed, and modularity in mind.
-It is developed by the Berkeley Vision and Learning Center ([BVLC](http://bvlc.eecs.berkeley.edu)) and community contributors.
+The code is based on [Caffe](https://github.com/BVLC/caffe) and [cuDNN](https://developer.nvidia.com/cuDNN)(v5)
 
-Check out the [project site](http://caffe.berkeleyvision.org) for all the details like
 
-- [DIY Deep Learning for Vision with Caffe](https://docs.google.com/presentation/d/1UeKXVgRvvxg9OUdh_UiC5G71UMscNPlvArsWER41PsU/edit#slide=id.p)
-- [Tutorial Documentation](http://caffe.berkeleyvision.org/tutorial/)
-- [BVLC reference models](http://caffe.berkeleyvision.org/model_zoo.html) and the [community model zoo](https://github.com/BVLC/caffe/wiki/Model-Zoo)
-- [Installation instructions](http://caffe.berkeleyvision.org/installation.html)
+## Abstract
 
-and step-by-step examples.
+<table>
+<tr>
+<td width = 70%>
 
-[![Join the chat at https://gitter.im/BVLC/caffe](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/BVLC/caffe?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+In recent years, deep learning has achieved great success in many computer vision applications. Convolutional neural networks (CNNs) have lately emerged as a major approach to image classification. Most research on CNNs thus far has focused on developing architectures such as the Inception and residual networks. The convolution layer is the core of the CNN, but few studies have addressed the convolution unit itself. <b>In this paper, we introduce a convolution unit called the active convolution unit (ACU). A new convolution has no fixed shape, because of which we can define any form of convolution. Its shape can be learned through backpropagation during training.</b> Our proposed unit has a few advantages. First, the ACU is a generalization of convolution; it can define not only all conventional convolutions, but also convolutions with fractional pixel coordinates. We can freely change the shape of the convolution, which provides greater freedom to form CNN structures. Second, the shape of the convolution is learned while training and there is no need to tune it by hand. Third, the ACU can learn better than a conventional unit, where we obtained the improvement simply by changing the conventional convolution to an ACU. We tested our proposed method on plain and residual networks, and the results showed significant improvement using our method on various datasets and architectures in comparison with the baseline. 
+</td>
+<td>
+<img src = 'https://cloud.githubusercontent.com/assets/25662811/24835483/766d7aee-1d3e-11e7-8b62-019df7c48d82.png'>
+</td>
+</tr>
+</table>
 
-Please join the [caffe-users group](https://groups.google.com/forum/#!forum/caffe-users) or [gitter chat](https://gitter.im/BVLC/caffe) to ask questions and talk about methods and models.
-Framework development discussions and thorough bug reports are collected on [Issues](https://github.com/BVLC/caffe/issues).
 
-Happy brewing!
+## Testing Code
+You can validate backpropagation using test code.
+Because it is not differentiable on lattice points, you should not use integer point position when you are testing code.
+It is simply possible to define "TEST_ACONV_FAST_ENV" macro in <i>aconv_fast_layer.hpp</i>
 
-## License and Citation
+1. Define "TEST_ACONV_FAST_ENV" macro in aconv_fast_layer.hpp
+2. \> make test
+3. \> ./build/test/test_aconv_fast_layer.testbin
 
-Caffe is released under the [BSD 2-Clause license](https://github.com/BVLC/caffe/blob/master/LICENSE).
-The BVLC reference models are released for unrestricted use.
+You should pass all tests.
+Before the start, <b>don't forget to undefine TEST_ACONV_FAST_ENV macro and make again.</b>
 
-Please cite Caffe in your publications if it helps your research:
+## Usage
 
-    @article{jia2014caffe,
-      Author = {Jia, Yangqing and Shelhamer, Evan and Donahue, Jeff and Karayev, Sergey and Long, Jonathan and Girshick, Ross and Guadarrama, Sergio and Darrell, Trevor},
-      Journal = {arXiv preprint arXiv:1408.5093},
-      Title = {Caffe: Convolutional Architecture for Fast Feature Embedding},
-      Year = {2014}
-    }
+ACU has 4 parameters(weight, bias, x-positions, y-positions of synapse).
+Even though you don't use bias term, the order will not be changed.
+
+Please refer [deploy file](https://github.com/jyh2986/Active-Convolution/blob/publish_ACU/models/ACU/[plain]deploy.prototxt) in models/ACU
+
+If you want define arbitary shape of convolution,
+
+1. use non SQUARE type in aconv_param 
+2. define number of synapse using kernel_h, kernel_w parameter in convolution_param
+
+
+In example, if you want define cross-shaped convolution with 4 synapses, you can use like belows.
+
+```
+...
+aconv_param{   type: CIRCLE }
+convolution_param {    num_output: 48    kernel_h: 1    kernel_w: 4    stride: 1 }
+...
+```
+
+When you use user-defined shape of convolution, you'd better edit <i>aconv_fast_layer.cpp</i> directly to define initial position of synapses. 
+
+
+## Example
+
+This is the result of plain ACU network, and there an example in [models/ACU](https://github.com/jyh2986/Active-Convolution/blob/publish_ACU/models/ACU) of CIFAR-10
+
+| Network  | CIFAR-10(\%) | CIFAR-100(\%) 
+|:-------|:-----:|:-------:|
+| baseline | 8.01 | 27.85 |
+| ACU      | 7.33 | 27.11 |
+| Improvement | <b>+0.68</b> | <b>+0.74</b> |
+
+
+This is changes of the positions over iterations.
+
+<img src=https://github.com/jyh2986/Active-Convolution/blob/publish_ACU/models/ACU/plain.gif width=30%>
+
+You can draw learned position by using [ipython script](https://github.com/jyh2986/Active-Convolution/blob/publish_ACU/models/ACU/net_view.ipynb).
